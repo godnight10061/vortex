@@ -21,6 +21,7 @@
 /// are not defined as part of the static library.
 fn main() {
     // Propagate DuckDB rpath from vortex-duckdb
-    let duckdb_lib = std::env::var("DEP_DUCKDB_LIB_DIR").unwrap();
+    let duckdb_lib = std::env::var("DEP_DUCKDB_LIB_DIR")
+        .expect("DEP_DUCKDB_LIB_DIR is not set (expected from vortex-duckdb build script)");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{duckdb_lib}");
 }
