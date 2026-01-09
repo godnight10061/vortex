@@ -369,8 +369,13 @@ fn main() {
 
     // Create/update symlink to source directory
     // Remove existing symlink/directory first (ignore errors if they don't exist)
-    drop(fs::remove_file(&duckdb_symlink));
-    drop(fs::remove_dir_all(&duckdb_symlink));
+    if let Ok(meta) = fs::symlink_metadata(&duckdb_symlink) {
+        if meta.file_type().is_symlink() || meta.is_file() {
+            let _ = fs::remove_file(&duckdb_symlink);
+        } else if meta.is_dir() {
+            let _ = fs::remove_dir_all(&duckdb_symlink);
+        }
+    }
     std::os::unix::fs::symlink(&extracted_source_path, &duckdb_symlink).unwrap();
 
     // Determine whether to build from source or use prebuilt libraries
