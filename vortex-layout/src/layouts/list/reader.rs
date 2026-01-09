@@ -135,7 +135,7 @@ impl LayoutReader for ListReader {
             usize::try_from(row_range.end - row_range.start).vortex_expect("row len fits in usize");
 
         let is_nullable = self.dtype().is_nullable();
-        let validity_idx = if is_nullable { Some(0) } else { None };
+        let validity_idx = is_nullable.then_some(0usize);
         let offsets_idx = if is_nullable { 1 } else { 0 };
         let elements_idx = if is_nullable { 2 } else { 1 };
 
@@ -150,7 +150,7 @@ impl LayoutReader for ListReader {
         let offsets_fut = offsets_reader.projection_evaluation(
             &offsets_range,
             &root(),
-            MaskFuture::new_true((row_len + 1) as usize),
+            MaskFuture::new_true(row_len + 1),
         )?;
 
         let validity_fut = validity_reader
@@ -173,10 +173,12 @@ impl LayoutReader for ListReader {
                 .vortex_expect("offset must be u64");
 
             let elements_range = first_offset..last_offset;
+            let elements_len = usize::try_from(elements_range.end - elements_range.start)
+                .vortex_expect("elements len fits in usize");
             let elements_fut = elements_reader.projection_evaluation(
                 &elements_range,
                 &root(),
-                MaskFuture::new_true((elements_range.end - elements_range.start) as usize),
+                MaskFuture::new_true(elements_len),
             )?;
 
             let elements_arr = elements_fut.await?;

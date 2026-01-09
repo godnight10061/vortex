@@ -75,24 +75,26 @@ impl LayoutStrategy for ListLayoutStrategy {
         let offsets_dtype_for_chunks = offsets_dtype.clone();
 
         let mut current_element_offset: u64 = 0;
+        let mut is_first_chunk = true;
 
         let transposed_stream = stream.map(move |chunk| {
             let (sequence_id, chunk) = chunk?;
             let mut sequence_pointer = sequence_id.descend();
             let list_chunk = list_from_list_view(chunk.to_listview());
 
-            let validity = if is_nullable {
-                Some((
+            let validity = is_nullable.then(|| {
+                (
                     sequence_pointer.advance(),
                     chunk.validity_mask().into_array(),
-                ))
-            } else {
-                None
-            };
+                )
+            });
 
             let offsets = cast(list_chunk.offsets().as_ref(), &offsets_dtype_for_chunks)?;
-            let offsets_to_send = if current_element_offset == 0 {
+            let offsets_to_send = if is_first_chunk {
+                is_first_chunk = false;
                 offsets.clone()
+            } else if current_element_offset == 0 {
+                offsets.slice(1..offsets.len())
             } else {
                 let offset_scalar = vortex_scalar::Scalar::primitive(
                     current_element_offset,
@@ -130,12 +132,13 @@ impl LayoutStrategy for ListLayoutStrategy {
                 pin_mut!(transposed_stream);
                 while let Some(result) = transposed_stream.next().await {
                     match result {
-                        Ok((v, o, e)) => {
-                            if let (Some(tx), Some(v)) = (&validity_tx, v) {
-                                let _ = tx.send(Ok(v)).await;
+                        Ok((validity_item, offsets_item, elements_item)) => {
+                            if let (Some(tx), Some(validity_item)) = (&validity_tx, validity_item)
+                            {
+                                let _ = tx.send(Ok(validity_item)).await;
                             }
-                            let _ = offsets_tx.send(Ok(o)).await;
-                            let _ = elements_tx.send(Ok(e)).await;
+                            let _ = offsets_tx.send(Ok(offsets_item)).await;
+                            let _ = elements_tx.send(Ok(elements_item)).await;
                         }
                         Err(err) => {
                             let err: Arc<VortexError> = Arc::new(err);
@@ -153,10 +156,10 @@ impl LayoutStrategy for ListLayoutStrategy {
 
         let mut child_futures = Vec::new();
 
-        if is_nullable {
+        if let Some(validity_rx) = validity_rx {
             let validity_stream = SequentialStreamAdapter::new(
                 DType::Bool(Nullability::NonNullable),
-                validity_rx.unwrap().into_stream().boxed(),
+                validity_rx.into_stream().boxed(),
             )
             .sendable();
             let child_eof = eof.split_off();

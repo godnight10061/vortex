@@ -3,6 +3,8 @@
 
 mod reader;
 #[cfg(test)]
+mod test_robustness;
+#[cfg(test)]
 mod tests;
 pub mod writer;
 
