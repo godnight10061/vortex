@@ -34,6 +34,7 @@ use crate::IntoLayout;
 use crate::LayoutRef;
 use crate::LayoutStrategy;
 use crate::layouts::flat::writer::FlatLayoutStrategy;
+use crate::layouts::list::writer::ListLayoutStrategy;
 use crate::layouts::struct_::StructLayout;
 use crate::segments::SegmentSinkRef;
 use crate::sequence::SendableSequentialStream;
@@ -214,6 +215,16 @@ impl LayoutStrategy for TableStrategy {
 
         // Fallback: if the array is not a struct, fallback to writing a single array.
         if !dtype.is_struct() {
+            if dtype.is_list() {
+                return ListLayoutStrategy::new(
+                    self.fallback.clone(),
+                    Arc::new(self.descend(&Field::ElementType)),
+                    self.validity.clone(),
+                )
+                .write_stream(ctx, segment_sink, stream, eof, handle)
+                .await;
+            }
+
             return self
                 .fallback
                 .write_stream(ctx, segment_sink, stream, eof, handle)
@@ -336,6 +347,12 @@ impl LayoutStrategy for TableStrategy {
                             if dtype.is_struct() {
                                 // Step into the field path for struct columns
                                 Arc::new(self.descend(&field))
+                            } else if dtype.is_list() {
+                                Arc::new(ListLayoutStrategy::new(
+                                    self.fallback.clone(),
+                                    Arc::new(self.descend(&field).descend(&Field::ElementType)),
+                                    self.validity.clone(),
+                                ))
                             } else {
                                 // Use fallback for leaf columns
                                 self.fallback.clone()

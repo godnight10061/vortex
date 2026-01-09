@@ -11,17 +11,20 @@ use futures::pin_mut;
 use vortex_array::Array;
 use vortex_array::IntoArray;
 use vortex_array::ToCanonical;
+use vortex_array::arrays::ListArray;
 use vortex_array::arrays::PrimitiveArray;
 use vortex_array::arrays::StructArray;
 use vortex_array::expr::session::ExprSession;
 use vortex_array::session::ArraySession;
 use vortex_array::validity::Validity;
 use vortex_buffer::ByteBuffer;
+use vortex_buffer::buffer;
 use vortex_dtype::FieldNames;
 use vortex_dtype::field_path;
 use vortex_file::OpenOptionsSessionExt;
 use vortex_file::WriteOptionsSessionExt;
 use vortex_io::session::RuntimeSession;
+use vortex_layout::LayoutChildType;
 use vortex_layout::layouts::compressed::CompressingStrategy;
 use vortex_layout::layouts::flat::writer::FlatLayoutStrategy;
 use vortex_layout::layouts::table::TableStrategy;
@@ -113,4 +116,48 @@ async fn test_file_roundtrip() {
         assert!(b.is_canonical());
         assert!(raw.nbytes() > compressed.nbytes());
     }
+}
+
+#[tokio::test]
+async fn test_default_write_strategy_uses_list_layout() {
+    let ids = PrimitiveArray::from_iter([1i32, 2, 3]).into_array();
+
+    // [[1, 2], [3], []]
+    let elements = buffer![1i32, 2, 3].into_array();
+    let offsets = buffer![0i32, 2, 3, 3].into_array();
+    let list = ListArray::new(elements, offsets, Validity::NonNullable).into_array();
+
+    let data = StructArray::new(
+        FieldNames::from(["id", "vals"]),
+        vec![ids, list],
+        3,
+        Validity::NonNullable,
+    )
+    .into_array();
+
+    let mut bytes = Vec::new();
+    SESSION
+        .write_options()
+        .write(&mut bytes, data.to_array_stream())
+        .await
+        .expect("write");
+
+    let vxf = SESSION
+        .open_options()
+        .open(ByteBuffer::from(bytes))
+        .await
+        .expect("open");
+
+    let root = vxf.footer().layout();
+    assert_eq!(root.encoding_id().as_ref(), "vortex.struct");
+
+    let vals_idx = root
+        .child_types()
+        .position(
+            |child| matches!(child, LayoutChildType::Field(ref name) if name.as_ref() == "vals"),
+        )
+        .expect("vals field child");
+
+    let vals_layout = root.child(vals_idx).expect("vals layout");
+    assert_eq!(vals_layout.encoding_id().as_ref(), "vortex.list");
 }
