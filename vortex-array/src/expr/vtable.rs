@@ -748,6 +748,7 @@ mod tests {
     use crate::expr::exprs::cast::cast;
     use crate::expr::exprs::get_item::col;
     use crate::expr::exprs::get_item::get_item;
+    use crate::expr::exprs::get_item_list::get_item_list;
     use crate::expr::exprs::is_null::is_null;
     use crate::expr::exprs::list_contains::list_contains;
     use crate::expr::exprs::literal::lit;
@@ -817,5 +818,17 @@ mod tests {
         assert_eq!(&expr, &deserialized_expr);
 
         Ok(())
+    }
+
+    #[test]
+    fn get_item_list_is_not_serializable() {
+        let expr = get_item_list("field", root());
+        let err = expr
+            .serialize_proto()
+            .expect_err("get_item_list must not be serializable");
+        assert!(
+            err.to_string().contains("must not be serialized"),
+            "unexpected error: {err}"
+        );
     }
 }
