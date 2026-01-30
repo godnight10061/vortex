@@ -7,8 +7,6 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # daily
   workflow_dispatch: { }
 
 permissions:

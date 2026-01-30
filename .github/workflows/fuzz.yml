@@ -8,8 +8,6 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  schedule:
-    - cron: "0 */4 * * *"  # every 4 hours
   workflow_dispatch: { }
 
 jobs:
